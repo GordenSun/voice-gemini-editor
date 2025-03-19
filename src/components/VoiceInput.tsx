@@ -1,4 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+
+// Define proper types for Speech Recognition
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: {
+    [key: number]: {
+      isFinal: boolean;
+      [key: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+// Add the global window interface
+interface SpeechRecognitionWindow extends Window {
+  webkitSpeechRecognition?: {
+    new(): SpeechRecognition;
+  };
+  SpeechRecognition?: {
+    new(): SpeechRecognition;
+  };
+}
 
 interface VoiceInputProps {
   onTranscript: (transcript: string) => void;
@@ -12,45 +50,51 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
   setIsListening 
 }) => {
   const [transcript, setTranscript] = useState('');
-  const [recognition, setRecognition] = useState<any>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
+  // Initialize recognition on component mount
   useEffect(() => {
     // 检查浏览器是否支持语音识别
     if (typeof window !== 'undefined' && 
         ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
+      const windowWithSpeech = window as unknown as SpeechRecognitionWindow;
+      const SpeechRecognitionConstructor = windowWithSpeech.webkitSpeechRecognition || 
+                                          windowWithSpeech.SpeechRecognition;
       
-      recognitionInstance.continuous = true;
-      recognitionInstance.interimResults = true;
-      recognitionInstance.lang = 'zh-CN';
-      
-      recognitionInstance.onresult = (event: any) => {
-        let currentTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            currentTranscript += event.results[i][0].transcript;
-          }
-        }
+      if (SpeechRecognitionConstructor) {
+        const recognitionInstance = new SpeechRecognitionConstructor();
         
-        if (currentTranscript) {
-          setTranscript(currentTranscript);
-          onTranscript(currentTranscript);
-        }
-      };
-      
-      recognitionInstance.onerror = (event: any) => {
-        console.error('Speech recognition error', event.error);
-        setIsListening(false);
-      };
-      
-      recognitionInstance.onend = () => {
-        if (isListening) {
-          recognitionInstance.start();
-        }
-      };
-      
-      setRecognition(recognitionInstance);
+        recognitionInstance.continuous = true;
+        recognitionInstance.interimResults = true;
+        recognitionInstance.lang = 'zh-CN';
+        
+        recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+          let currentTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              currentTranscript += event.results[i][0].transcript;
+            }
+          }
+          
+          if (currentTranscript) {
+            setTranscript(currentTranscript);
+            onTranscript(currentTranscript);
+          }
+        };
+        
+        recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('Speech recognition error', event.error);
+          setIsListening(false);
+        };
+        
+        recognitionInstance.onend = () => {
+          if (isListening) {
+            recognitionInstance.start();
+          }
+        };
+        
+        setRecognition(recognitionInstance);
+      }
     } else {
       console.warn('您的浏览器不支持语音识别功能');
     }
@@ -60,8 +104,9 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
         recognition.stop();
       }
     };
-  }, []);
+  }, []); // Empty dependency array is fine here as this only runs on mount
 
+  // Handle listening state changes
   useEffect(() => {
     if (recognition) {
       if (isListening) {
