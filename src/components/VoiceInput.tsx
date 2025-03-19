@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Define proper types for Speech Recognition
 interface SpeechRecognitionEvent extends Event {
@@ -54,57 +54,61 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
 
   // Initialize recognition on component mount
   useEffect(() => {
-    // 检查浏览器是否支持语音识别
-    if (typeof window !== 'undefined' && 
-        ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      const windowWithSpeech = window as unknown as SpeechRecognitionWindow;
-      const SpeechRecognitionConstructor = windowWithSpeech.webkitSpeechRecognition || 
-                                          windowWithSpeech.SpeechRecognition;
-      
-      if (SpeechRecognitionConstructor) {
-        const recognitionInstance = new SpeechRecognitionConstructor();
+    // 只在recognition为空时初始化，避免重复创建实例
+    if (recognition === null) {
+      // 检查浏览器是否支持语音识别
+      if (typeof window !== 'undefined' && 
+          ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+        const windowWithSpeech = window as unknown as SpeechRecognitionWindow;
+        const SpeechRecognitionConstructor = windowWithSpeech.webkitSpeechRecognition || 
+                                            windowWithSpeech.SpeechRecognition;
         
-        recognitionInstance.continuous = true;
-        recognitionInstance.interimResults = true;
-        recognitionInstance.lang = 'zh-CN';
-        
-        recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-          let currentTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              currentTranscript += event.results[i][0].transcript;
-            }
-          }
+        if (SpeechRecognitionConstructor) {
+          const recognitionInstance = new SpeechRecognitionConstructor();
           
-          if (currentTranscript) {
-            setTranscript(currentTranscript);
-            onTranscript(currentTranscript);
-          }
-        };
-        
-        recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
-          console.error('Speech recognition error', event.error);
-          setIsListening(false);
-        };
-        
-        recognitionInstance.onend = () => {
-          if (isListening) {
-            recognitionInstance.start();
-          }
-        };
-        
-        setRecognition(recognitionInstance);
+          recognitionInstance.continuous = true;
+          recognitionInstance.interimResults = true;
+          recognitionInstance.lang = 'zh-CN';
+          
+          recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+            let currentTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              if (event.results[i].isFinal) {
+                currentTranscript += event.results[i][0].transcript;
+              }
+            }
+            
+            if (currentTranscript) {
+              setTranscript(currentTranscript);
+              onTranscript(currentTranscript);
+            }
+          };
+          
+          recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
+            console.error('Speech recognition error', event.error);
+            setIsListening(false);
+          };
+          
+          recognitionInstance.onend = () => {
+            if (isListening) {
+              recognitionInstance.start();
+            }
+          };
+          
+          setRecognition(recognitionInstance);
+        }
+      } else {
+        console.warn('您的浏览器不支持语音识别功能');
       }
-    } else {
-      console.warn('您的浏览器不支持语音识别功能');
     }
     
+    // 清理函数
     return () => {
       if (recognition) {
         recognition.stop();
       }
     };
-  }, []); // Empty dependency array is fine here as this only runs on mount
+  }, [onTranscript, isListening, setIsListening, recognition]); // 包含ESLint要求的依赖
 
   // Handle listening state changes
   useEffect(() => {
