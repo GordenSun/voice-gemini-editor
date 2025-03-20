@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import ImageUpload from './ImageUpload';
 import VoiceInput from './VoiceInput';
 import ResultDisplay from './ResultDisplay';
@@ -12,6 +12,43 @@ const ImageEditor: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // 添加一个引用，用于跟踪当前正在编辑的图片内容
+  const currentImageRef = useRef<{
+    dataUrl: string | null,
+    base64: string | null,
+    mimeType: string | null
+  }>({
+    dataUrl: null,
+    base64: null,
+    mimeType: null
+  });
+
+  // 当原始图片或编辑后的图片改变时，更新当前图片引用
+  useEffect(() => {
+    if (editedImage) {
+      // 如果有编辑后的图片，使用它
+      const [dataUrlHeader, base64Data] = editedImage.split(',');
+      const mimeType = dataUrlHeader.match(/data:(.*);base64/)?.[1] || '';
+      
+      currentImageRef.current = {
+        dataUrl: editedImage,
+        base64: base64Data,
+        mimeType: mimeType
+      };
+      
+      console.log("更新当前图片引用为编辑后的图片", mimeType);
+    } else if (originalImage) {
+      // 如果只有原始图片，使用它
+      currentImageRef.current = {
+        dataUrl: originalImage,
+        base64: originalImage.split(',')[1],
+        mimeType: selectedFile ? getMimeType(selectedFile) : ''
+      };
+      
+      console.log("更新当前图片引用为原始图片");
+    }
+  }, [editedImage, originalImage, selectedFile]);
 
   const handleImageSelect = (file: File) => {
     setSelectedFile(file);
@@ -19,7 +56,8 @@ const ImageEditor: React.FC = () => {
     // 创建预览 URL
     const reader = new FileReader();
     reader.onload = () => {
-      setOriginalImage(reader.result as string);
+      const result = reader.result as string;
+      setOriginalImage(result);
     };
     reader.readAsDataURL(file);
     
@@ -35,18 +73,30 @@ const ImageEditor: React.FC = () => {
       setIsProcessing(true);
       setError(null);
       
-      // 将图片转换为 Base64
-      const base64 = await imageToBase64(selectedFile);
-      const mimeType = getMimeType(selectedFile);
+      // 使用当前图片引用中的数据
+      const current = currentImageRef.current;
+      let imageToEditBase64 = '';
+      let imageType = '';
       
-      // 使用当前编辑过的图片或原始图片
-      const imageToEdit = editedImage ? editedImage.split(',')[1] : base64;
-      const imageType = mimeType;
+      if (current.base64 && current.mimeType) {
+        imageToEditBase64 = current.base64;
+        imageType = current.mimeType;
+        console.log("使用当前引用的图片进行编辑:", {
+          usingEditedImage: !!editedImage,
+          mimeType: imageType
+        });
+      } else {
+        // 如果引用中没有数据，回退到原始方法
+        imageToEditBase64 = await imageToBase64(selectedFile);
+        imageType = getMimeType(selectedFile);
+        console.log("回退：使用原始图片:", imageType);
+      }
       
       // 调用 Gemini API 编辑图片
-      const result = await editImage(imageToEdit, imageType, transcript);
+      const result = await editImage(imageToEditBase64, imageType, transcript);
       
       if (result.image) {
+        console.log("图片编辑成功，更新状态");
         setEditedImage(result.image);
         setDescription(result.text);
       } else {
